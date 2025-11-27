@@ -1,54 +1,54 @@
 import streamlit as st
-from supabase import create_client, Client
 import requests
 
-# Load secrets
+st.title("🔐 Supabase Login → JWT → n8n Call (ohne supabase-py)")
+
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
 N8N_WEBHOOK_URL = st.secrets["N8N_WEBHOOK_URL"]
 
-# Init Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-
-st.title("🔐 Supabase Login + n8n JWT Test")
-
-# Input fields
 email = st.text_input("Email")
 password = st.text_input("Passwort", type="password")
 
+
+def supabase_login(email, password):
+    url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "email": email,
+        "password": password,
+    }
+    return requests.post(url, headers=headers, json=payload)
+
+
 if st.button("Login"):
-    with st.spinner("Melde an..."):
-        try:
-            # Login request
-            auth = supabase.auth.sign_in_with_password({
-                "email": email,
-                "password": password
-            })
+    if not email or not password:
+        st.warning("Bitte Email und Passwort eingeben.")
+        st.stop()
 
-            if auth is None or auth.user is None:
-                st.error("Fehler beim Login.")
-            else:
-                access_token = auth.session.access_token
-                st.success("Login erfolgreich!")
-                st.code(access_token, language="text")
+    with st.spinner("Authentifiziere über Supabase…"):
+        response = supabase_login(email, password)
 
-                st.subheader("JWT an n8n senden")
+    if response.status_code != 200:
+        st.error(f"❌ Login fehlgeschlagen: {response.text}")
+        st.stop()
 
-                # Send token to n8n
-                headers = {"Authorization": f"Bearer {access_token}"}
+    data = response.json()
+    jwt = data.get("access_token")
 
-                try:
-                    response = requests.post(N8N_WEBHOOK_URL, headers=headers)
+    st.success("Login erfolgreich!")
+    st.code(jwt, language="text")
 
-                    if response.status_code == 200:
-                        st.success("Antwort von n8n erhalten:")
-                        st.json(response.json())
-                    else:
-                        st.error(f"n8n Fehler: {response.status_code}")
-                        st.text(response.text)
+    st.subheader("📡 Sende JWT an n8n")
 
-                except Exception as e:
-                    st.error(f"Fehler bei Anfrage an n8n: {e}")
+    headers = {"Authorization": f"Bearer {jwt}"}
 
-        except Exception as e:
-            st.error(f"Login Fehler: {e}")
+    n8n_response = requests.post(N8N_WEBHOOK_URL, headers=headers)
+
+    if n8n_response.status_code == 200:
+        st.success("Antwort von n8n:")
+        st.json(n8n_response.json())
+    else:
