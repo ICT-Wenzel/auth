@@ -52,3 +52,5 @@ if st.button("Login"):
         st.success("Antwort von n8n:")
         st.json(n8n_response.json())
     else:
+        st.error(f"n8n Fehler: {n8n_response.status_code}")
+        st.text(n8n_response.text)
